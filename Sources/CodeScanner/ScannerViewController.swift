@@ -414,7 +414,7 @@ extension CodeScannerView {
             Date().timeIntervalSince(lastTime) <= 0.5
         }
 
-        func found(_ result: ScanResult) {
+        func found(_ result: [ScanResult]) {
             lastTime = Date()
 
             if parentView.shouldVibrateOnSuccess {
@@ -436,20 +436,21 @@ extension CodeScannerView {
 @available(macCatalyst 14.0, *)
 extension CodeScannerView.ScannerViewController: AVCaptureMetadataOutputObjectsDelegate {
     public func metadataOutput(_ output: AVCaptureMetadataOutput, didOutput metadataObjects: [AVMetadataObject], from connection: AVCaptureConnection) {
+        let codeResults = metadataObjects.compactMap { $0 as? AVMetadataMachineReadableCodeObject }
+            .filter { $0.stringValue != nil }
 
-
-        guard let metadataObject = metadataObjects.first,
+        guard !codeResults.isEmpty,
               !parentView.isPaused,
               !didFinishScanning,
-              !isCapturing,
-              let readableObject = metadataObject as? AVMetadataMachineReadableCodeObject,
-              let stringValue = readableObject.stringValue else {
+              !isCapturing else {
 
             return
         }
 
         handler = { [self] image in
-            let result = ScanResult(string: stringValue, type: readableObject.type, image: image, corners: readableObject.corners)
+            let result = codeResults.map {
+                ScanResult(string: $0.stringValue ?? "", type: $0.type, image: image, corners: $0.corners)
+            }
 
             switch parentView.scanMode {
             case .once:
@@ -464,9 +465,15 @@ extension CodeScannerView.ScannerViewController: AVCaptureMetadataOutputObjectsD
                 }
 
             case .oncePerCode:
-                if !codesFound.contains(stringValue) {
-                    codesFound.insert(stringValue)
-                    found(result)
+                var foundResult: [ScanResult] = []
+                for code in result {
+                    if !codesFound.contains(code.string) {
+                        codesFound.insert(code.string)
+                        foundResult.append(code)
+                    }
+                }
+                if !foundResult.isEmpty {
+                    found(foundResult)
                 }
 
             case .continuous:
@@ -475,8 +482,15 @@ extension CodeScannerView.ScannerViewController: AVCaptureMetadataOutputObjectsD
                 }
 
             case .continuousExcept(let ignoredList):
-                if isPastScanInterval, !ignoredList.contains(stringValue) {
-                    found(result)
+                var foundResult: [ScanResult] = []
+                for code in result {
+                    if isPastScanInterval, !ignoredList.contains(code.string) {
+                        codesFound.insert(code.string)
+                        foundResult.append(code)
+                    }
+                }
+                if !foundResult.isEmpty {
+                    found(foundResult)
                 }
             }
         }
@@ -512,10 +526,11 @@ extension CodeScannerView.ScannerViewController: UIImagePickerControllerDelegate
 
         let features = detector.features(in: ciImage)
 
+        var codeResult = [ScanResult]()
         for feature in features as! [CIQRCodeFeature] {
             qrCodeLink = feature.messageString!
             if qrCodeLink.isEmpty {
-                didFail(reason: .badOutput)
+                continue
             } else {
                 let corners = [
                     feature.bottomLeft,
@@ -524,8 +539,14 @@ extension CodeScannerView.ScannerViewController: UIImagePickerControllerDelegate
                     feature.topLeft
                 ]
                 let result = ScanResult(string: qrCodeLink, type: .qr, image: qrcodeImg, corners: corners)
-                found(result)
+                codeResult.append(result)
             }
+        }
+
+        if (codeResult.isEmpty) {
+            didFail(reason: .badOutput)
+        } else {
+            found(codeResult)
         }
     }
 

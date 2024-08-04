@@ -89,7 +89,7 @@ public struct CodeScannerView: UIViewControllerRepresentable {
     public var isPaused: Bool
     public var isGalleryPresented: Binding<Bool>
     public var videoCaptureDevice: AVCaptureDevice?
-    public var completion: (Result<ScanResult, ScanError>) -> Void
+    public var completion: (Result<[ScanResult], ScanError>) -> Void
 
     public init(
         codeTypes: [AVMetadataObject.ObjectType],
@@ -104,7 +104,7 @@ public struct CodeScannerView: UIViewControllerRepresentable {
         isPaused: Bool = false,
         isGalleryPresented: Binding<Bool> = .constant(false),
         videoCaptureDevice: AVCaptureDevice? = AVCaptureDevice.bestForVideo,
-        completion: @escaping (Result<ScanResult, ScanError>) -> Void
+        completion: @escaping (Result<[ScanResult], ScanError>) -> Void
     ) {
         self.codeTypes = codeTypes
         self.scanMode = scanMode
