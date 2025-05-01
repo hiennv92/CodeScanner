@@ -90,6 +90,7 @@ public struct CodeScannerView: UIViewControllerRepresentable {
     public var isGalleryPresented: Binding<Bool>
     public var videoCaptureDevice: AVCaptureDevice?
     public var completion: (Result<[ScanResult], ScanError>) -> Void
+    private var onCreated: ((ScannerViewController) -> Void)?
 
     public init(
         codeTypes: [AVMetadataObject.ObjectType],
@@ -104,6 +105,7 @@ public struct CodeScannerView: UIViewControllerRepresentable {
         isPaused: Bool = false,
         isGalleryPresented: Binding<Bool> = .constant(false),
         videoCaptureDevice: AVCaptureDevice? = AVCaptureDevice.bestForVideo,
+        onCreated: ((ScannerViewController) -> Void)? = nil,
         completion: @escaping (Result<[ScanResult], ScanError>) -> Void
     ) {
         self.codeTypes = codeTypes
@@ -119,10 +121,13 @@ public struct CodeScannerView: UIViewControllerRepresentable {
         self.isGalleryPresented = isGalleryPresented
         self.videoCaptureDevice = videoCaptureDevice
         self.completion = completion
+        self.onCreated = onCreated
     }
 
     public func makeUIViewController(context: Context) -> ScannerViewController {
-        return ScannerViewController(showViewfinder: showViewfinder, parentView: self)
+        let viewController = ScannerViewController(showViewfinder: showViewfinder, parentView: self)
+        onCreated?(viewController)
+        return viewController
     }
 
     public func updateUIViewController(_ uiViewController: ScannerViewController, context: Context) {
@@ -133,6 +138,7 @@ public struct CodeScannerView: UIViewControllerRepresentable {
             isManualCapture: scanMode.isManual,
             isManualSelect: manualSelect
         )
+        uiViewController.isPaused = isPaused
     }
     
 }

@@ -20,6 +20,7 @@ extension CodeScannerView {
         var parentView: CodeScannerView!
         var codesFound = Set<String>()
         var didFinishScanning = false
+        var isPaused = false
         var lastTime = Date(timeIntervalSince1970: 0)
         private let showViewfinder: Bool
         
@@ -94,16 +95,30 @@ extension CodeScannerView {
 
         override public func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {
             // Send back their simulated data, as if it was one of the types they were scanning for
-            found(ScanResult(
+            found([ScanResult(
                 string: parentView.simulatedData,
                 type: parentView.codeTypes.first ?? .qr, image: nil, corners: []
-            ))
+            )])
+        }
+        
+        public var isRunning: Bool {
+            false
+        }
+        
+        public func setupSession() {
+        }
+        
+        public func stopSession() {
         }
         
         #else
         
         var captureSession: AVCaptureSession?
         var previewLayer: AVCaptureVideoPreviewLayer!
+        
+        public var isRunning: Bool {
+            captureSession?.isRunning == true
+        }
 
         private lazy var viewFinder: UIImageView? = {
             guard let image = UIImage(named: "viewfinder", in: .module, with: nil) else {
@@ -165,34 +180,53 @@ extension CodeScannerView {
 
         override public func viewDidAppear(_ animated: Bool) {
             super.viewDidAppear(animated)
+            isPaused = false
             updateOrientation()
+            print(#function)
         }
 
         override public func viewWillAppear(_ animated: Bool) {
             super.viewWillAppear(animated)
 
             setupSession()
+            print(#function)
         }
+        
+        public override func viewWillDisappear(_ animated: Bool) {
+            super.viewWillDisappear(animated)
+            isPaused = true
+        }
+        
+        private var isStoppingSession = false
+        private var isStartingSession = false
+        private var isSessionRunning = false
       
-        private func setupSession() {
+        public func setupSession() {
             guard let captureSession else {
                 return
             }
             
             if previewLayer == nil {
                 previewLayer = AVCaptureVideoPreviewLayer(session: captureSession)
+                previewLayer.frame = view.layer.bounds
+                previewLayer.videoGravity = .resizeAspectFill
+                view.layer.addSublayer(previewLayer)
+                addViewFinder()
             }
-
-            previewLayer.frame = view.layer.bounds
-            previewLayer.videoGravity = .resizeAspectFill
-            view.layer.addSublayer(previewLayer)
-            addViewFinder()
 
             reset()
 
-            if !captureSession.isRunning {
-                DispatchQueue.global(qos: .userInteractive).async {
+            isSessionRunning = true
+            DispatchQueue.global().async {
+                if !captureSession.isRunning {
+                    self.isStartingSession = true
                     self.captureSession?.startRunning()
+                    self.isStartingSession = false
+                    if !self.isSessionRunning {
+                        self.isStoppingSession = true
+                        self.captureSession?.stopRunning()
+                        self.isStoppingSession = false
+                    }
                 }
             }
         }
@@ -292,14 +326,27 @@ extension CodeScannerView {
 
         override public func viewDidDisappear(_ animated: Bool) {
             super.viewDidDisappear(animated)
-
-            if captureSession?.isRunning == true {
-                DispatchQueue.global(qos: .userInteractive).async {
+            
+            stopSession()
+            NotificationCenter.default.removeObserver(self)
+            print(#function)
+        }
+        
+        public func stopSession() {
+            isSessionRunning = false
+            DispatchQueue.global().async {
+                if self.captureSession?.isRunning == true {
+                    self.isStoppingSession = true
                     self.captureSession?.stopRunning()
+                    self.isStoppingSession = false
+                    
+                    if self.isSessionRunning {
+                        self.isStartingSession = true
+                        self.captureSession?.startRunning()
+                        self.isStartingSession = false
+                    }
                 }
             }
-
-            NotificationCenter.default.removeObserver(self)
         }
 
         override public var prefersStatusBarHidden: Bool {
@@ -440,10 +487,9 @@ extension CodeScannerView.ScannerViewController: AVCaptureMetadataOutputObjectsD
             .filter { $0.stringValue != nil }
 
         guard !codeResults.isEmpty,
-              !parentView.isPaused,
+              !isPaused,
               !didFinishScanning,
               !isCapturing else {
-
             return
         }
 
@@ -538,6 +584,12 @@ extension CodeScannerView.ScannerViewController: UIImagePickerControllerDelegate
                     feature.topRight,
                     feature.topLeft
                 ]
+//                let corners = [
+//                    CGPoint(x: feature.bottomLeft.x / ciImage.extent.width, y: feature.bottomLeft.y / ciImage.extent.height),
+//                    CGPoint(x: feature.bottomRight.x / ciImage.extent.width, y: feature.bottomRight.y / ciImage.extent.height),
+//                    CGPoint(x: feature.topRight.x / ciImage.extent.width, y: feature.topRight.y / ciImage.extent.height),
+//                    CGPoint(x: feature.topLeft.x / ciImage.extent.width, y: feature.topLeft.y / ciImage.extent.height)
+//                ]
                 let result = ScanResult(string: qrCodeLink, type: .qr, image: qrcodeImg, corners: corners)
                 codeResult.append(result)
             }
